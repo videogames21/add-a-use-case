@@ -1473,23 +1473,25 @@ Details:
 7. Use case ends.
 
 **Extensions:**
-- **2a. The user isn't authorized under BR-section-scoped-access**
-- 2a1. The user's request is rejected
-- 2a2. Use case ends
-- **3a. The Student is already deactivated**
-- 3a1. The course admin or instructor is notified that the student is already deactivated
-- 3a2. Use case ends
-- **4a. An admin or instructor wants to go back at the warning**
-- 4a1. The system closes the warning and makes no change
-- 4a2. Use case ends\
-**Priority:** Low\
-**Frequency of Use:** Rare. Occurs occasionally when a student withdraws from a course section.\
+- **2a. The user is not authorized under BR-section-scoped-access:**
+  - 2a1. The system rejects the user's request and deactivates nothing.
+  - 2a2. Use case ends.
+- **3a. The student is already deactivated:**
+  - 3a1. The system informs the course admin or instructor that the student is already deactivated.
+  - 3a2. Use case ends.
+- **4a. The course admin or instructor cancels at the warning:**
+  - 4a1. The system closes the warning and makes no change.
+  - 4a2. Use case ends.
+
+**Priority:** Low
+**Frequency of Use:** Rare. Occurs occasionally when a student withdraws from a course section.
 **Business Rules:** BR-student-lifecycle, BR-submission-owed, BR-section-scoped-access
 
 **Associated Information:**
 - Consequence of the deactivation: The student will no longer be able to log in or submit weekly activity reports and peer evaluations, but the student's account and her previously submitted work are kept in the system. Deactivation will NOT remove the student from the system, and the account can be reactivated in the future (UC-STU-reactivate-student: Reactivate a student). This is distinct from deletion (UC-STU-delete-student: Delete a student), which is a physical, unrecoverable delete. The course admin or instructor shall be able to cancel the use case at any time prior to submitting it.
-- Deactivating a student will not remove them from their team, but as BR-submission-owed states only active students can be peer evaluated. In fact, the other members of the team cannot see the deactivated student when submitting peer reviews. Also when generating a weekly peer evaluation report for a section the deactivated student will also not show up.
+- Team and peer evaluations: deactivating a student does not remove her from her team, but under BR-submission-owed only a student whose account is active owes or receives a peer evaluation. The other members of the team do not see the deactivated student when they submit peer evaluations, and the weekly peer evaluation report for a course section does not list her.
 - Each request must follow FR-SEC-active-account.
+
 **Related Use Cases:** UC-STU-delete-student: Delete a student; UC-STU-reactivate-student: Reactivate a student
 **Assumptions:**
 **Open Issues:**
