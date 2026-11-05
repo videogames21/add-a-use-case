@@ -1,6 +1,7 @@
 package team.projectpulse.student;
 
 import jakarta.persistence.EntityManager;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,6 +17,9 @@ import team.projectpulse.evaluation.PeerEvaluationRepository;
 import team.projectpulse.instructor.Instructor;
 import team.projectpulse.instructor.InstructorRepository;
 import team.projectpulse.system.StatusCode;
+
+import java.util.HashSet;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
@@ -153,15 +157,32 @@ class StudentDeactivationIntegrationTest extends AbstractIntegrationTest {
         String token = login("b.gates@abc.edu");
         Integer sectionId = this.john.getSection().getSectionId();
         long evaluationsBefore = this.peerEvaluationRepository.count();
+
+        // Baseline: while she is active she is listed, together with other students
+        Set<Integer> before = reportStudentIds(sectionId, token);
+        assertThat(before).contains(this.john.getId()).hasSizeGreaterThan(1);
+
         this.mockMvc.perform(post(this.baseUrl + "/students/" + this.john.getId() + "/deactivate").header(HttpHeaders.AUTHORIZATION, token))
                 .andExpect(status().isOk());
 
-        this.mockMvc.perform(get(this.baseUrl + "/evaluations/sections/" + sectionId + "/week/2023-W31").accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, token))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.peerEvaluationAverages[?(@.studentId == " + this.john.getId() + ")]").isEmpty())
-                .andExpect(jsonPath("$.data.peerEvaluationAverages.length()").isNotEmpty());
+        // Afterward the report is exactly the same students minus her
+        Set<Integer> expected = new HashSet<>(before);
+        expected.remove(this.john.getId());
+        assertThat(reportStudentIds(sectionId, token)).isEqualTo(expected);
 
         assertThat(this.peerEvaluationRepository.count()).isEqualTo(evaluationsBefore);
+    }
+
+    private Set<Integer> reportStudentIds(Integer sectionId, String token) throws Exception {
+        String body = this.mockMvc.perform(get(this.baseUrl + "/evaluations/sections/" + sectionId + "/week/2023-W31").accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        JSONArray averages = new JSONObject(body).getJSONObject("data").getJSONArray("peerEvaluationAverages");
+        Set<Integer> ids = new HashSet<>();
+        for (int i = 0; i < averages.length(); i++) {
+            ids.add(averages.getJSONObject(i).getInt("studentId"));
+        }
+        return ids;
     }
 
     @Test
