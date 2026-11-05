@@ -184,23 +184,25 @@ class StudentServiceTest {
     void testDeactivateStudentSuccess() {
         // Given
         Student john = this.students.get(0);
+        john.setEnabled(false); // as reloaded after the conditional update
+        given(this.studentRepository.deactivateIfEnabled(1)).willReturn(1);
         given(this.studentRepository.findById(1)).willReturn(Optional.of(john));
-        given(this.studentRepository.save(john)).willReturn(john);
 
         // When
         Student result = this.studentService.deactivateStudent(1);
 
         // Then
         assertThat(result.isEnabled()).isFalse();
-        verify(this.studentRepository, times(1)).save(john);
+        verify(this.studentRepository, never()).save(any());
         verify(this.studentRepository, never()).deleteById(any());
     }
 
     @Test
     void testDeactivateStudentAlreadyDeactivated() {
-        // Given: extension 3a
+        // Given: extension 3a. The conditional update changes no row, but the student exists.
         Student john = this.students.get(0);
         john.setEnabled(false);
+        given(this.studentRepository.deactivateIfEnabled(1)).willReturn(0);
         given(this.studentRepository.findById(1)).willReturn(Optional.of(john));
 
         // When
@@ -213,8 +215,25 @@ class StudentServiceTest {
     }
 
     @Test
+    void testDeactivateStudentLosingARaceIsAConflict() {
+        // Given: the student is enabled when first read, but a concurrent request wins the conditional update, so
+        // this one changes 0 rows. The outcome must be the 3a conflict, not a second success.
+        Student john = this.students.get(0);
+        given(this.studentRepository.deactivateIfEnabled(1)).willReturn(0);
+        given(this.studentRepository.findById(1)).willReturn(Optional.of(john));
+
+        // When
+        Throwable thrown = catchThrowable(() -> this.studentService.deactivateStudent(1));
+
+        // Then
+        assertThat(thrown).isInstanceOf(StudentAlreadyDeactivatedException.class);
+        verify(this.studentRepository, never()).save(any());
+    }
+
+    @Test
     void testDeactivateStudentNotFound() {
         // Given
+        given(this.studentRepository.deactivateIfEnabled(99)).willReturn(0);
         given(this.studentRepository.findById(99)).willReturn(Optional.empty());
 
         // When

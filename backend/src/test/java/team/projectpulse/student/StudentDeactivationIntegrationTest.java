@@ -137,6 +137,18 @@ class StudentDeactivationIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("3a: the deactivation is one conditional update, so a second attempt changes no row")
+    void conditionalUpdateChangesARowOnlyOnce() {
+        // The race is decided by this statement: whichever request runs it first gets 1, any other gets 0 and the
+        // service turns that into the 409. Two sequential calls exercise the same database-side guard.
+        assertThat(this.studentRepository.deactivateIfEnabled(this.john.getId())).isEqualTo(1);
+        assertThat(this.studentRepository.deactivateIfEnabled(this.john.getId())).isEqualTo(0);
+        assertThat(this.studentRepository.deactivateIfEnabled(-1)).isEqualTo(0); // no such student
+
+        assertThat(this.studentRepository.findById(this.john.getId()).orElseThrow().isEnabled()).isFalse();
+    }
+
+    @Test
     @DisplayName("The teammate list omits a deactivated student")
     void teammateListOmitsDeactivatedStudent() throws Exception {
         String instructorToken = login("b.gates@abc.edu");

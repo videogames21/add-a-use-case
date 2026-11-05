@@ -88,13 +88,16 @@ public class StudentService {
      * @throws StudentAlreadyDeactivatedException extension 3a
      */
     public Student deactivateStudent(Integer studentId) {
-        Student student = this.studentRepository.findById(studentId)
-                .orElseThrow(() -> new ObjectNotFoundException("student", studentId));
-        if (!student.isEnabled()) {
+        // The check and the write are one conditional UPDATE, so two concurrent requests cannot both succeed:
+        // only the one that changes a row proceeds; the loser sees 0 rows and gets the 3a conflict.
+        if (this.studentRepository.deactivateIfEnabled(studentId) == 0) {
+            // 0 rows means no such student, or already deactivated; tell them apart
+            this.studentRepository.findById(studentId)
+                    .orElseThrow(() -> new ObjectNotFoundException("student", studentId));
             throw new StudentAlreadyDeactivatedException();
         }
-        student.setEnabled(false);
-        return this.studentRepository.save(student);
+        return this.studentRepository.findById(studentId)
+                .orElseThrow(() -> new ObjectNotFoundException("student", studentId));
     }
 
     public Student saveStudent(Student newStudent, Integer courseId, Integer sectionId, String registrationToken, String role) {
