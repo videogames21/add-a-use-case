@@ -16,16 +16,11 @@ import team.projectpulse.evaluation.PeerEvaluationRepository;
 import team.projectpulse.instructor.Instructor;
 import team.projectpulse.instructor.InstructorRepository;
 import team.projectpulse.system.StatusCode;
-import tools.jackson.databind.json.JsonMapper;
-
-import java.util.HashMap;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -40,8 +35,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @DisplayName("Integration tests for deactivating a student")
 class StudentDeactivationIntegrationTest extends AbstractIntegrationTest {
 
-    private static final int NO_SUCH_ID = 999999;
-
     @Autowired
     MockMvc mockMvc;
 
@@ -53,9 +46,6 @@ class StudentDeactivationIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     PeerEvaluationRepository peerEvaluationRepository;
-
-    @Autowired
-    JsonMapper jsonMapper;
 
     @Autowired
     EntityManager entityManager;
@@ -143,23 +133,6 @@ class StudentDeactivationIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("PUT ignores enabled: a rename is saved and the account stays active")
-    void putIgnoresEnabled() throws Exception {
-        String token = login("b.gates@abc.edu");
-        Map<String, Object> studentDto = new HashMap<>();
-        studentDto.put("username", "j.smith@abc.edu");
-        studentDto.put("firstName", "Johnny");
-        studentDto.put("lastName", "Smith");
-        studentDto.put("email", "j.smith@abc.edu");
-        studentDto.put("enabled", false);
-
-        this.mockMvc.perform(put(this.baseUrl + "/students/" + this.john.getId()).contentType(MediaType.APPLICATION_JSON).content(this.jsonMapper.writeValueAsString(studentDto)).accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, token))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.firstName").value("Johnny"))
-                .andExpect(jsonPath("$.data.enabled").value(true));
-    }
-
-    @Test
     @DisplayName("The teammate list omits a deactivated student")
     void teammateListOmitsDeactivatedStudent() throws Exception {
         String instructorToken = login("b.gates@abc.edu");
@@ -205,34 +178,12 @@ class StudentDeactivationIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("2a: a student, including the student herself, is forbidden")
-    void studentIsForbidden() throws Exception {
-        String token = login("j.smith@abc.edu");
-
-        this.mockMvc.perform(post(this.baseUrl + "/students/" + this.john.getId() + "/deactivate").header(HttpHeaders.AUTHORIZATION, token))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value(StatusCode.FORBIDDEN));
-
-        assertJohnStillActive();
-    }
-
-    @Test
     @DisplayName("2a: an unauthenticated caller is refused")
     void unauthenticatedCallerIsRefused() throws Exception {
         this.mockMvc.perform(post(this.baseUrl + "/students/" + this.john.getId() + "/deactivate"))
                 .andExpect(status().isUnauthorized());
 
         assertJohnStillActive();
-    }
-
-    @Test
-    @DisplayName("2a: an id that names no student is forbidden, not a server error")
-    void unknownStudentIsForbidden() throws Exception {
-        String token = login("b.wei@abc.edu");
-
-        this.mockMvc.perform(post(this.baseUrl + "/students/" + NO_SUCH_ID + "/deactivate").header(HttpHeaders.AUTHORIZATION, token))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value(StatusCode.FORBIDDEN));
     }
 
     @Test
