@@ -5,6 +5,7 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
+import team.projectpulse.student.StudentAlreadyDeactivatedException;
 import team.projectpulse.system.Result;
 import team.projectpulse.system.StatusCode;
 import org.springframework.http.HttpStatus;
@@ -194,6 +195,12 @@ public class ExceptionHandlerAdvice {
     @ExceptionHandler(SectionLockRequiredException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     Result handleSectionLockRequiredException(SectionLockRequiredException ex) {
+        return new Result(false, StatusCode.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(StudentAlreadyDeactivatedException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    Result handleStudentAlreadyDeactivatedException(StudentAlreadyDeactivatedException ex) {
         return new Result(false, StatusCode.CONFLICT, ex.getMessage());
     }
 

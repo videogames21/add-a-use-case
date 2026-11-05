@@ -5,6 +5,7 @@ import team.projectpulse.instructor.Instructor;
 import team.projectpulse.section.Section;
 import team.projectpulse.section.SectionRepository;
 import team.projectpulse.system.UserUtils;
+import team.projectpulse.system.exception.ObjectNotFoundException;
 import team.projectpulse.user.MyUserPrincipal;
 import team.projectpulse.user.userinvitation.UserInvitationService;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,6 +29,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.*;
@@ -174,7 +176,84 @@ class StudentServiceTest {
         assertThat(result.getLastName()).isEqualTo(update.getLastName());
         assertThat(result.getEmail()).isEqualTo(update.getEmail());
 //        assertThat(result.getRoles()).isEqualTo(update.getRoles());
-        assertThat(result.isEnabled()).isEqualTo(update.isEnabled());
+        // `enabled` in the update is ignored even for an instructor: deactivation has its own endpoint
+        assertThat(result.isEnabled()).isTrue();
+    }
+
+    @Test
+    void testDeactivateStudentSuccess() {
+        // Given
+        Student john = this.students.get(0);
+        john.setEnabled(false); // as reloaded after the conditional update
+        given(this.studentRepository.deactivateIfEnabled(1)).willReturn(1);
+        given(this.studentRepository.findById(1)).willReturn(Optional.of(john));
+
+        // When
+        Student result = this.studentService.deactivateStudent(1);
+
+        // Then
+        assertThat(result.isEnabled()).isFalse();
+        verify(this.studentRepository, never()).save(any());
+        verify(this.studentRepository, never()).deleteById(any());
+    }
+
+    @Test
+    void testDeactivateStudentAlreadyDeactivated() {
+        // Given: extension 3a. The conditional update changes no row, but the student exists.
+        Student john = this.students.get(0);
+        john.setEnabled(false);
+        given(this.studentRepository.deactivateIfEnabled(1)).willReturn(0);
+        given(this.studentRepository.findById(1)).willReturn(Optional.of(john));
+
+        // When
+        Throwable thrown = catchThrowable(() -> this.studentService.deactivateStudent(1));
+
+        // Then
+        assertThat(thrown).isInstanceOf(StudentAlreadyDeactivatedException.class)
+                .hasMessage("This student is already deactivated.");
+        verify(this.studentRepository, never()).save(any());
+    }
+
+    @Test
+    void testDeactivateStudentLosingARaceIsAConflict() {
+        // Given: the student is enabled when first read, but a concurrent request wins the conditional update, so
+        // this one changes 0 rows. The outcome must be the 3a conflict, not a second success.
+        Student john = this.students.get(0);
+        given(this.studentRepository.deactivateIfEnabled(1)).willReturn(0);
+        given(this.studentRepository.findById(1)).willReturn(Optional.of(john));
+
+        // When
+        Throwable thrown = catchThrowable(() -> this.studentService.deactivateStudent(1));
+
+        // Then
+        assertThat(thrown).isInstanceOf(StudentAlreadyDeactivatedException.class);
+        verify(this.studentRepository, never()).save(any());
+    }
+
+    @Test
+    void testDeactivateStudentNotFound() {
+        // Given
+        given(this.studentRepository.deactivateIfEnabled(99)).willReturn(0);
+        given(this.studentRepository.findById(99)).willReturn(Optional.empty());
+
+        // When
+        Throwable thrown = catchThrowable(() -> this.studentService.deactivateStudent(99));
+
+        // Then
+        assertThat(thrown).isInstanceOf(ObjectNotFoundException.class);
+    }
+
+    @Test
+    void testFindStudentsByTeamIdReturnsActiveStudentsOnly() {
+        // Given
+        given(this.studentRepository.findByTeamTeamIdAndEnabledTrue(1)).willReturn(List.of(this.students.get(0)));
+
+        // When
+        List<Student> result = this.studentService.findStudentsByTeamId(1);
+
+        // Then
+        assertThat(result).containsExactly(this.students.get(0));
+        verify(this.studentRepository, never()).findByTeamTeamId(any());
     }
 
     @Test

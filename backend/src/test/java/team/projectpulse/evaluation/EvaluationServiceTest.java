@@ -30,6 +30,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -590,6 +591,56 @@ class EvaluationServiceTest {
         assertThat(report.getPeerEvaluationAverages().get(1).getAverageTotalScore()).isCloseTo(50.0, within(0.01));
         assertThat(report.getPeerEvaluationAverages().get(2).getAverageTotalScore()).isCloseTo(51.0, within(0.01));
         assertThat(report.getPeerEvaluationAverages().get(3).getAverageTotalScore()).isCloseTo(52.0, within(0.01));
+    }
+
+    @Test
+    void testGenerateWeeklyPeerEvaluationReportForSectionOmitsDeactivatedStudent() {
+        // Given: Eric (id 4) is deactivated; evaluations lookups for the others return empty lists by default
+        this.eric.setEnabled(false);
+        given(this.sectionRepository.findById(anyInt())).willReturn(Optional.of(new Section("2023-2024", LocalDate.of(2023, 8, 14), LocalDate.of(2024, 4, 29), true, DayOfWeek.MONDAY, LocalTime.of(23, 59), DayOfWeek.TUESDAY, LocalTime.of(23, 59))));
+        given(this.studentRepository.findBySectionSectionId(anyInt())).willReturn(this.students);
+
+        // When
+        WeeklyPeerEvaluationReport report = this.evaluationService.generateWeeklyPeerEvaluationReportForSection(2, "2023-W31");
+
+        // Then: she is not listed, and the evaluations others gave her are untouched
+        assertThat(report.getPeerEvaluationAverages()).extracting(PeerEvaluationAverage::getStudentId)
+                .doesNotContain(4)
+                .contains(3);
+        verify(this.evaluationRepository, never()).findByWeekAndEvaluateeId("2023-W31", 4);
+        verify(this.evaluationRepository, never()).delete(any());
+    }
+
+    @Test
+    void testAddPeerEvaluationRefusesDeactivatedEvaluatee() {
+        // Given: no clock is needed, the deactivated party is refused before the window is checked
+        this.woody.setEnabled(false);
+        PeerEvaluation newPeerEvaluation = new PeerEvaluation("2023-W31", amanda, woody, List.of(), "public comment", "private comment");
+
+        // When
+        Throwable throwable = catchThrowable(() -> this.evaluationService.addPeerEvaluation(newPeerEvaluation));
+
+        // Then
+        assertThat(throwable)
+                .isInstanceOf(PeerEvaluationIllegalArgumentException.class)
+                .hasMessage("A deactivated student cannot be evaluated.");
+        verify(this.evaluationRepository, never()).save(any());
+    }
+
+    @Test
+    void testAddPeerEvaluationRefusesDeactivatedEvaluator() {
+        // Given
+        this.amanda.setEnabled(false);
+        PeerEvaluation newPeerEvaluation = new PeerEvaluation("2023-W31", amanda, woody, List.of(), "public comment", "private comment");
+
+        // When
+        Throwable throwable = catchThrowable(() -> this.evaluationService.addPeerEvaluation(newPeerEvaluation));
+
+        // Then
+        assertThat(throwable)
+                .isInstanceOf(PeerEvaluationIllegalArgumentException.class)
+                .hasMessage("A deactivated student cannot submit a peer evaluation.");
+        verify(this.evaluationRepository, never()).save(any());
     }
 
     @Test

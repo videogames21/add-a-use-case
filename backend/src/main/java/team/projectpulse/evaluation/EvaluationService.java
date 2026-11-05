@@ -49,6 +49,15 @@ public class EvaluationService {
     }
 
     public PeerEvaluation addPeerEvaluation(PeerEvaluation newPeerEvaluation) {
+        // A deactivated student neither owes nor receives a peer evaluation (BR-submission-owed), so a crafted
+        // request cannot record one for her (UC-STU-deactivate-student)
+        if (!newPeerEvaluation.getEvaluator().isEnabled()) {
+            throw new PeerEvaluationIllegalArgumentException("A deactivated student cannot submit a peer evaluation.");
+        }
+        if (!newPeerEvaluation.getEvaluatee().isEnabled()) {
+            throw new PeerEvaluationIllegalArgumentException("A deactivated student cannot be evaluated.");
+        }
+
         // Make sure the submission week is one of the course section's active weeks and is still open for submission
         requireOpenSubmissionWindow(newPeerEvaluation.getEvaluator().getSection(), newPeerEvaluation.getWeek(), NOT_PREVIOUS_WEEK_MESSAGE);
 
@@ -220,8 +229,9 @@ public class EvaluationService {
 
         report.setSectionName(this.sectionRepository.findById(sectionId).orElseThrow(() -> new ObjectNotFoundException("section", sectionId)).getSectionName());
 
-        // Get all students in the section
-        List<Student> students = this.studentRepository.findBySectionSectionId(sectionId).stream().filter(student -> student.getTeam() != null).collect(Collectors.toList());
+        // Get all active students in the section: a deactivated student is not listed (BR-submission-owed).
+        // Evaluations others gave her are kept, just unlisted.
+        List<Student> students = this.studentRepository.findBySectionSectionId(sectionId).stream().filter(student -> student.isEnabled() && student.getTeam() != null).collect(Collectors.toList());
 
         // For each student, compute her average total score, collect all public comments and private comments, and compute rating averages for each criterion.
         students.forEach(student -> {

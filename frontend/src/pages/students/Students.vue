@@ -35,11 +35,11 @@
       <el-table-column label="Team" prop="teamName"></el-table-column>
       <el-table-column label="Status" prop="enabled">
         <template #default="{ row }">
-          <el-tag type="success" v-if="row.enabled">Enabled</el-tag>
-          <el-tag type="danger" v-else>Disabled</el-tag>
+          <el-tag type="success" v-if="row.enabled">Active</el-tag>
+          <el-tag type="danger" v-else>Deactivated</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="Operations" width="120">
+      <el-table-column label="Operations" width="200">
         <template #default="{ row }">
           <el-button
             icon="Edit"
@@ -48,6 +48,14 @@
             type="primary"
             @click.stop="showEditStudentDialog(row)"
           ></el-button>
+          <el-button
+            v-if="row.enabled"
+            plain
+            type="danger"
+            data-cy="deactivate-student"
+            @click.stop="confirmDeactivateStudent(row)"
+            >Deactivate</el-button
+          >
         </template>
       </el-table-column>
       <template #empty>
@@ -78,7 +86,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { searchStudents } from '@/apis/student'
+import { deactivateStudent, searchStudents } from '@/apis/student'
 import type {
   SearchStudentByCriteriaResponse,
   Student,
@@ -86,7 +94,7 @@ import type {
 } from '@/apis/student/types'
 import { useSettingsStore } from '@/stores/settings'
 import EditStudentForm from './EditStudentForm.vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const searchCriteria = ref<StudentSearchCriteria>({
   sectionId: NaN,
@@ -157,6 +165,29 @@ const studentBeingEditedId = ref<number>() // ID of the artifact being edited, i
 function showEditStudentDialog(student: Student) {
   dialogVisible.value = true
   studentBeingEditedId.value = student.id as number
+}
+
+// UC-STU-deactivate-student: warn of the consequences and ask for confirmation (step 4) before anything is sent.
+// Cancelling closes the warning and sends nothing (4a).
+async function confirmDeactivateStudent(student: Student) {
+  try {
+    await ElMessageBox.confirm(
+      `${student.firstName} ${student.lastName} will no longer be able to log in or submit weekly activity reports and peer evaluations. ` +
+        'Her account and previously submitted work are kept, and the account can be reactivated later. ' +
+        'This is not a deletion. Deactivate this student?',
+      'Deactivate student',
+      { confirmButtonText: 'Deactivate', cancelButtonText: 'Cancel', type: 'warning' }
+    )
+  } catch {
+    return // Cancelled
+  }
+  try {
+    await deactivateStudent(student.id as number)
+    ElMessage.success('Student deactivated')
+  } catch {
+    // The shared request instance has already shown the error, e.g. "This student is already deactivated." (3a)
+  }
+  loadStudents() // Show the row as Deactivated either way
 }
 
 function closeDialog() {

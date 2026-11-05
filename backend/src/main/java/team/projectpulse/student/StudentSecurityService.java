@@ -47,4 +47,23 @@ public class StudentSecurityService {
                 .anyMatch(instructor -> instructor.getId().equals(instructorIdFromJwt));
     }
 
+    /**
+     * Check if the caller may change this student's account status: an instructor assigned to the student's course
+     * section, or the course admin who owns the student's course (BR-section-scoped-access, BR-role-based-access).
+     * Either one alone would shut out the other, and the student herself is neither.
+     *
+     * @param studentId the id of the student to be managed, NOT the current user's id
+     */
+    public boolean canManageStudent(Integer studentId) {
+        Integer callerId = this.userUtils.getUserId();
+        Student student = this.studentRepository.findById(studentId).orElse(null);
+        if (callerId == null || student == null) {
+            return false;
+        }
+        boolean isAssignedInstructor = student.getSection().getInstructors().stream()
+                .anyMatch(instructor -> callerId.equals(instructor.getId()));
+        boolean isOwningCourseAdmin = callerId.equals(student.getSection().getCourse().getCourseAdmin().getId());
+        return isAssignedInstructor || isOwningCourseAdmin;
+    }
+
 }

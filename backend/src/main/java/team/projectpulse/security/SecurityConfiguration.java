@@ -30,6 +30,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
 import team.projectpulse.security.authorizationmanagers.*;
+import team.projectpulse.user.UserRepository;
 
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -98,8 +99,10 @@ public class SecurityConfiguration {
 
     private final StudentInstructorAuthorizationManager studentInstructorAuthorizationManager;
 
+    private final StudentManagementAuthorizationManager studentManagementAuthorizationManager;
 
-    public SecurityConfiguration(CustomBasicAuthenticationEntryPoint customBasicAuthenticationEntryPoint, CustomBearerTokenAuthenticationEntryPoint customBearerTokenAuthenticationEntryPoint, CustomBearerTokenAccessDeniedHandler customBearerTokenAccessDeniedHandler, UserOwnershipAuthorizationManager userOwnershipAuthorizationManager, CourseOwnershipAuthorizationManager courseOwnershipAuthorizationManager, CourseMembershipAuthorizationManager courseMembershipAuthorizationManager, CriterionOwnershipAuthorizationManager criterionOwnershipAuthorizationManager, RubricOwnershipAuthorizationManager rubricOwnershipAuthorizationManager, CriterionMembershipAuthorizationManager criterionMembershipAuthorizationManager, RubricMembershipAuthorizationManager rubricMembershipAuthorizationManager, AssignCriterionToRubricAuthorizationManager assignCriterionToRubricAuthorizationManager, SectionMembershipAuthorizationManager sectionMembershipAuthorizationManager, SectionOwnershipAuthorizationManager sectionOwnershipAuthorizationManager, AssignRubricToSectionAuthorizationManager assignRubricToSectionAuthorizationManager, AssignInstructorToSectionAuthorizationManager assignInstructorToSectionAuthorizationManager, TeamMembershipAuthorizationManager teamMembershipAuthorizationManager, TeamOwnershipAuthorizationManager teamOwnershipAuthorizationManager, AssignStudentToTeamAuthorizationManager assignStudentToTeamAuthorizationManager, AssignInstructorToTeamAuthorizationManager assignInstructorToTeamAuthorizationManager, TransferTeamAuthorizationManager transferTeamAuthorizationManager, ActivityOwnershipAuthorizationManager activityOwnershipAuthorizationManager, ActivityMembershipAuthorizationManager activityMembershipAuthorizationManager, EvaluationOwnershipAuthorizationManager evaluationOwnershipAuthorizationManager, SectionInstructorAuthorizationManager sectionInstructorAuthorizationManager, StudentInstructorAuthorizationManager studentInstructorAuthorizationManager) throws NoSuchAlgorithmException {
+
+    public SecurityConfiguration(CustomBasicAuthenticationEntryPoint customBasicAuthenticationEntryPoint, CustomBearerTokenAuthenticationEntryPoint customBearerTokenAuthenticationEntryPoint, CustomBearerTokenAccessDeniedHandler customBearerTokenAccessDeniedHandler, UserOwnershipAuthorizationManager userOwnershipAuthorizationManager, CourseOwnershipAuthorizationManager courseOwnershipAuthorizationManager, CourseMembershipAuthorizationManager courseMembershipAuthorizationManager, CriterionOwnershipAuthorizationManager criterionOwnershipAuthorizationManager, RubricOwnershipAuthorizationManager rubricOwnershipAuthorizationManager, CriterionMembershipAuthorizationManager criterionMembershipAuthorizationManager, RubricMembershipAuthorizationManager rubricMembershipAuthorizationManager, AssignCriterionToRubricAuthorizationManager assignCriterionToRubricAuthorizationManager, SectionMembershipAuthorizationManager sectionMembershipAuthorizationManager, SectionOwnershipAuthorizationManager sectionOwnershipAuthorizationManager, AssignRubricToSectionAuthorizationManager assignRubricToSectionAuthorizationManager, AssignInstructorToSectionAuthorizationManager assignInstructorToSectionAuthorizationManager, TeamMembershipAuthorizationManager teamMembershipAuthorizationManager, TeamOwnershipAuthorizationManager teamOwnershipAuthorizationManager, AssignStudentToTeamAuthorizationManager assignStudentToTeamAuthorizationManager, AssignInstructorToTeamAuthorizationManager assignInstructorToTeamAuthorizationManager, TransferTeamAuthorizationManager transferTeamAuthorizationManager, ActivityOwnershipAuthorizationManager activityOwnershipAuthorizationManager, ActivityMembershipAuthorizationManager activityMembershipAuthorizationManager, EvaluationOwnershipAuthorizationManager evaluationOwnershipAuthorizationManager, SectionInstructorAuthorizationManager sectionInstructorAuthorizationManager, StudentInstructorAuthorizationManager studentInstructorAuthorizationManager, StudentManagementAuthorizationManager studentManagementAuthorizationManager) throws NoSuchAlgorithmException {
         this.customBasicAuthenticationEntryPoint = customBasicAuthenticationEntryPoint;
         this.customBearerTokenAuthenticationEntryPoint = customBearerTokenAuthenticationEntryPoint;
         this.customBearerTokenAccessDeniedHandler = customBearerTokenAccessDeniedHandler;
@@ -125,6 +128,7 @@ public class SecurityConfiguration {
         this.evaluationOwnershipAuthorizationManager = evaluationOwnershipAuthorizationManager;
         this.sectionInstructorAuthorizationManager = sectionInstructorAuthorizationManager;
         this.studentInstructorAuthorizationManager = studentInstructorAuthorizationManager;
+        this.studentManagementAuthorizationManager = studentManagementAuthorizationManager;
 
         // Generate a public/private key pair.
         KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
@@ -134,8 +138,17 @@ public class SecurityConfiguration {
         this.privateKey = (RSAPrivateKey) keyPair.getPrivate();
     }
 
+    /**
+     * The converter the resource server uses: the standard one, preceded by the account check of
+     * FR-SEC-active-account, so a token issued before a deactivation is refused with a 401.
+     */
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public ActiveAccountJwtAuthenticationConverter activeAccountJwtAuthenticationConverter(UserRepository userRepository, JwtAuthenticationConverter jwtAuthenticationConverter) {
+        return new ActiveAccountJwtAuthenticationConverter(userRepository, jwtAuthenticationConverter);
+    }
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http, ActiveAccountJwtAuthenticationConverter activeAccountJwtAuthenticationConverter) throws Exception {
         return http
                 .authorizeHttpRequests(authorizeHttpRequests -> authorizeHttpRequests
                         // Security rules for the /courses/** endpoint.
@@ -207,6 +220,9 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.PUT, this.baseUrl + "/students/{studentId}").access(this.userOwnershipAuthorizationManager)
                         .requestMatchers(HttpMethod.DELETE, this.baseUrl + "/students/{studentId}").access(this.userOwnershipAuthorizationManager)
                         .requestMatchers(HttpMethod.GET, this.baseUrl + "/students/teams/{teamId}").access(this.teamMembershipAuthorizationManager)
+                        // UC-STU-deactivate-student: an instructor assigned to the student's course section, or the course admin who owns its
+                        // course (BR-section-scoped-access, BR-role-based-access). An id that names no student is refused here too.
+                        .requestMatchers(HttpMethod.POST, this.baseUrl + "/students/{studentId}/deactivate").access(this.studentManagementAuthorizationManager)
 
                         // Security rules for the /activities/** endpoint.
                         .requestMatchers(HttpMethod.POST, this.baseUrl + "/activities/search").authenticated()
@@ -318,7 +334,7 @@ public class SecurityConfiguration {
                 .cors(Customizer.withDefaults())
                 .httpBasic(httpBasic -> httpBasic.authenticationEntryPoint(this.customBasicAuthenticationEntryPoint))
                 .oauth2ResourceServer(oauth2ResourceServer -> oauth2ResourceServer
-                        .jwt(Customizer.withDefaults())
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(activeAccountJwtAuthenticationConverter))
                         .authenticationEntryPoint(this.customBearerTokenAuthenticationEntryPoint)
                         .accessDeniedHandler(this.customBearerTokenAccessDeniedHandler))
                 /* Configures the spring boot application as an OAuth2 Resource Server which authenticates all
