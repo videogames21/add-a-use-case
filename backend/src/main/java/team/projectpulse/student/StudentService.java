@@ -9,8 +9,6 @@ import jakarta.transaction.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -77,7 +75,26 @@ public class StudentService {
     }
 
     public List<Student> findStudentsByTeamId(Integer teamId) {
-        return this.studentRepository.findByTeamTeamId(teamId);
+        // Active students only: the other members of a team do not see a deactivated student when they submit
+        // peer evaluations (UC-STU-deactivate-student, BR-submission-owed)
+        return this.studentRepository.findByTeamTeamIdAndEnabledTrue(teamId);
+    }
+
+    /**
+     * Deactivates a student: clears {@code enabled} and nothing else, so her team membership, activities, and peer
+     * evaluations stay (UC-STU-deactivate-student, BR-student-lifecycle). The caller has been authorized against the
+     * student by the route rule, which loaded her by this same id.
+     *
+     * @throws StudentAlreadyDeactivatedException extension 3a
+     */
+    public Student deactivateStudent(Integer studentId) {
+        Student student = this.studentRepository.findById(studentId)
+                .orElseThrow(() -> new ObjectNotFoundException("student", studentId));
+        if (!student.isEnabled()) {
+            throw new StudentAlreadyDeactivatedException();
+        }
+        student.setEnabled(false);
+        return this.studentRepository.save(student);
     }
 
     public Student saveStudent(Student newStudent, Integer courseId, Integer sectionId, String registrationToken, String role) {
@@ -108,19 +125,12 @@ public class StudentService {
         Student oldStudent = this.studentRepository.findById(studentId)
                 .orElseThrow(() -> new ObjectNotFoundException("student", studentId));
 
-        // If the user is not an admin, then the user can only update her username, first rubricName, last rubricName, and email
+        // Name, username, and email only. `enabled` in the update is ignored: deactivation has its own endpoint
+        // (deactivateStudent) with a warning, an already-deactivated check, and its own authorization.
         oldStudent.setUsername(update.getUsername());
         oldStudent.setFirstName(update.getFirstName());
         oldStudent.setLastName(update.getLastName());
         oldStudent.setEmail(update.getEmail());
-
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
-        // If the user is an admin, then the user can update all the fields
-        if (authentication.getAuthorities().stream().anyMatch(grantedAuthority -> grantedAuthority.getAuthority().equals("ROLE_instructor"))) {
-            oldStudent.setEnabled(update.isEnabled());
-//            oldStudent.setRoles(update.getRoles());
-        }
 
         return this.studentRepository.save(oldStudent);
     }

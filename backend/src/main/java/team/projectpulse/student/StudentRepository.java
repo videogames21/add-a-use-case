@@ -13,4 +13,7 @@ public interface StudentRepository extends JpaRepository<Student, Integer>, JpaS
     List<Student> findBySectionSectionId(Integer sectionId);
 
     List<Student> findByTeamTeamId(Integer teamId);
+
+    // A team's active students: a deactivated student owes and receives no peer evaluation (BR-submission-owed)
+    List<Student> findByTeamTeamIdAndEnabledTrue(Integer teamId);
 }
