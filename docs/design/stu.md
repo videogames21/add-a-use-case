@@ -54,7 +54,7 @@ classDiagram
     EvaluationService --> StudentRepository
 ```
 
-- **Backend, new:** `StudentController.deactivateStudent`, `StudentService.deactivateStudent`, `StudentSecurityService.canManageStudent`, `security/authorizationmanagers/StudentManagementAuthorizationManager`, `security/ActiveAccountJwtAuthenticationConverter`, and one route rule in `SecurityConfiguration` placed before the `denyAll()` catch-all.
+- **Backend, new:** `StudentController.deactivateStudent`, `StudentService.deactivateStudent`, `StudentSecurityService.canManageStudent`, `security/authorizationmanagers/StudentManagementAuthorizationManager`, `security/ActiveAccountJwtAuthenticationConverter` (a plain class wrapping the existing `JwtAuthenticationConverter` bean, exposed as a bean and set on the resource server explicitly in `SecurityConfiguration`), and one route rule in `SecurityConfiguration` placed before the `denyAll()` catch-all.
 - **Backend, changed:** `StudentService.updateStudent` stops copying `enabled`; `findStudentsByTeamId` returns active students only; `EvaluationService.generateWeeklyPeerEvaluationReportForSection` filters `isEnabled()`; `EvaluationService.addPeerEvaluation` refuses a deactivated evaluator or evaluatee.
 - **Reused unchanged:** `MyUserPrincipal.isEnabled` (login denial), `SubmissionStatusService` (already excludes deactivated students), `StudentDto`, `Result`, `StatusCode.CONFLICT`.
 - **Frontend:** `pages/students/Students.vue` gains a Deactivate button per row (hidden when she is already deactivated) that opens an `ElMessageBox.confirm`; `EditStudentForm.vue`'s Status switch becomes a read-only tag; `apis/student` gains `deactivateStudent`. UI text says *Active* and *Deactivated*, not Enabled and Disabled.
@@ -106,7 +106,7 @@ sequenceDiagram
     participant UR as UserRepository
     S->>F: any protected request
     F->>C: convert(jwt)
-    C->>UR: load the user by the id claim
+    C->>UR: load the user by the userId claim
     UR-->>C: enabled = false
     C-->>S: 401; the SPA clears the token and goes to login
 ```
@@ -131,7 +131,7 @@ sequenceDiagram
 
 **Who may call it: assigned instructor or owning course admin, one new manager.** Rejected: `userOwnershipAuthorizationManager`, which admits `isCurrentUserInstructorOfStudentSection || isStudentSelf`. It denies an owning course admin who is not assigned to the section, which BR-section-scoped-access allows, and it would let a student deactivate herself. The same composition decision is recorded in [not.md](not.md#key-decisions) (*Authorization*).
 
-**The account check runs on every request, not only at login.** The converter loads the user by the id claim and rejects a disabled one, a primary-key lookup per request. Rejected: a shorter token lifetime, which still leaves a window the FR forbids. Rejected: a denylist of tokens, which adds state to store and expire for a rare event. It also covers deactivated instructors with no further work. Cost: one read per request, acceptable at course scale (see Open questions).
+**The account check runs on every request, not only at login.** The converter loads the user by the `userId` claim and rejects a disabled one, or one that no longer exists, with a `DisabledException` (401), a primary-key lookup per request. It wraps rather than extends the standard converter, whose `convert` is final. Rejected: a shorter token lifetime, which still leaves a window the FR forbids. Rejected: a denylist of tokens, which adds state to store and expire for a rare event. It also covers deactivated instructors with no further work. Cost: one read per request, acceptable at course scale (see Open questions).
 
 **The consequences are enforced on the server, not only hidden in the UI.** The teammate list and the section report filter on `enabled`, and `addPeerEvaluation` refuses a deactivated party. Rejected: hiding her in the UI only, since a crafted request would then record an evaluation that BR-submission-owed says nobody owes.
 
@@ -154,7 +154,7 @@ No delta. `enabled` is an existing column on `PeerEvaluationUser` (baseline migr
 |---|---|---|
 | UC-STU-deactivate-student main | integration | An assigned instructor's `POST …/deactivate` returns `200` with `enabled: false`; the student is still on her team and her activities and peer evaluations remain |
 | UC-STU-deactivate-student main, course admin | integration | The course admin who owns the course but is not assigned to the section gets `200` |
-| UC-STU-deactivate-student 2a | integration | An instructor of another course section, a course admin of another course, the student herself, and an unauthenticated caller get `403`; an id that names no student gets `403`; nothing is deactivated |
+| UC-STU-deactivate-student 2a | integration | An instructor of another course section, a course admin of another course, and the student herself get `403`; an unauthenticated caller gets `401`, the entry point's answer before any rule runs; an id that names no student gets `403`; nothing is deactivated |
 | UC-STU-deactivate-student 3a | unit and integration | A second call returns `409` and the state is unchanged; the service throws `StudentAlreadyDeactivatedException` |
 | UC-STU-deactivate-student 4a | E2E (Cypress, API stubbed) | Cancelling the warning sends no request and leaves the row unchanged |
 | UC-STU-deactivate-student step 4 | E2E (Cypress, API stubbed) | The warning names the loss of login and of weekly activity report and peer evaluation submission, and that her work is kept |
